@@ -22,7 +22,14 @@
 */
 
 #include <ArduinoJson.h>
+
+#ifdef ESP32 
+#include <WiFi.h>
+#endif
+#ifdef ESP8266 
 #include <ESP8266WiFi.h>
+#endif
+
 #include <ArduinoOTA.h>
 #include <ModbusMaster.h>
 #include <PubSubClient.h>
@@ -174,7 +181,20 @@ void modbusCool(int coolDownTimeMS)
   {
     if (modbusCooldownHit > 50)
     {
-      ESP.reset();
+      #ifdef ESP32 
+      if (modbusCooldownHit > 50)
+      {
+        ESP.restart();
+      }
+      #endif
+
+      #ifdef ESP8266
+      if (modbusCooldownHit > 50)
+      {
+        ESP.reset();
+      }
+      #endif
+
     }
     modbusCooldownHit++;
     while ((long)millis() < (long)modbusCooldown)
@@ -506,7 +526,22 @@ void writeResponse(WiFiClient &client, const JsonDocument &doc)
 void setup()
 {
   char host[64];
-  sprintf(chipID, "%08X", ESP.getChipId());
+  #ifdef ESP32 
+      // Initialize chipID buffer
+      char chipID[9]; // Make sure chipID has enough space to store the MAC address
+      chipID[8] = '\0';
+      // Get the chip ID
+      uint8_t mac[6]; // Buffer to hold the MAC address
+      esp_err_t err = esp_efuse_mac_get_default(mac);
+      if (err != ESP_OK) {
+          // Handle error
+      }
+      // Format the chip ID as a hexadecimal string
+      sprintf(chipID, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  #endif
+  #ifdef ESP8266 
+    sprintf(chipID, "%08X", ESP.getChipId());
+  #endif
   sprintf(host, HOST, chipID);
 #if USE_WIFI_LED
   pinMode(WIFI_LED, OUTPUT);
@@ -534,9 +569,17 @@ void setup()
   SSerial.begin(19200, SWSERIAL_8E1);
   node.begin(MODBUS_SLAVE_ADDRESS, SSerial);
 #elif SERIAL_CHOICE == SERIAL_HARDWARE
-#warning Compiling for hardware serial
-  Serial.begin(19200, SERIAL_8E1);
-  node.begin(MODBUS_SLAVE_ADDRESS, Serial);
+  #ifdef USE_HW_SERIAL_2
+    #define SERIAL_PORT Serial2
+    #define SERIAL_PORT_NAME "Serial2"
+    #warning Compiling for hardware Serial2
+  #else
+    #define SERIAL_PORT Serial
+    #define SERIAL_PORT_NAME "Serial"
+    #warning Compiling for hardware Serial1
+  #endif
+  SERIAL_PORT.begin(19200, SERIAL_8E1);
+  node.begin(MODBUS_SLAVE_ADDRESS, SERIAL_PORT);
 #else
 #error hardware og serial serial port?
 #endif
